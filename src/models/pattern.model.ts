@@ -27,7 +27,7 @@
  * - `'POSITIVE_NUMBER'` — non-negative integer or decimal
  *
  * **Identifier formats**
- * - `'UUID'` — UUID v4 (lowercase hex, hyphen-separated)
+ * - `'UUID'` — generic UUID syntax (hyphen-separated hexadecimal groups)
  * - `'CODE_16'` — 16-character alphanumeric code
  * - `'CODE_32'` — 32-character alphanumeric code
  * - `'HEX_COLOR'` — CSS hex color (`#RGB` or `#RRGGBB`)

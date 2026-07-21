@@ -1,9 +1,7 @@
 import { SD_LANGUAGE_STORAGE_KEY } from '../constants/common.constants';
+import { FilePickerCancelledError, UnsafeUrlProtocolError, ValidationError } from '../errors';
 import { detectIncognito } from './detect-incognito.fns';
 
-// Hardcoded i18n cho upload — pure function nên không inject() được I18nService.
-// Đọc lang trực tiếp từ localStorage (cùng key với I18nService: SD_LANGUAGE_STORAGE_KEY).
-// Khi I18nService chuyển sang reload-on-change model, lang ở đây luôn đồng bộ với UI.
 const UPLOAD_MESSAGES = {
   vi: {
     'invalid-format': '[{name}] File tải lên không đúng định dạng. Vui lòng chọn lại',
@@ -30,251 +28,266 @@ const UPLOAD_MESSAGES = {
 type UploadMsgKey = keyof typeof UPLOAD_MESSAGES.vi;
 type UploadLang = keyof typeof UPLOAD_MESSAGES;
 
+/** Options for a single isolated native file-picker invocation. */
+export interface UploadOptions {
+  /** Allowed file extensions without a leading dot. */
+  extensions?: string[];
+  /** Native file-picker accept expression. Derived from `extensions` when omitted. */
+  accept?: string;
+  /** Maximum size of each file in MiB. Must be a positive finite number when provided. */
+  maxSizeInMb?: number;
+  /** Legacy filename validator. A non-empty return value rejects the file. */
+  validator?: (fileName: string) => string | undefined | void;
+  /** Full-file validator. A non-empty return value rejects the file. */
+  fileValidator?: (file: File) => string | undefined | void;
+  /** Maximum time to wait for selection/cancellation. Defaults to five minutes. */
+  timeoutMs?: number;
+  /** Allows selecting multiple files and changes the resolved value to `File[]`. */
+  multiple?: boolean;
+}
+
+/** Protocol policy for browser download links. */
+export interface DownloadOptions {
+  /** Allows a `data:` URL. Disabled by default because it may carry active content. */
+  allowDataUrl?: boolean;
+  /**
+   * Additional explicitly trusted protocols. Defaults to none. This option cannot
+   * enable `data:`, `javascript:`, or `vbscript:`; use `allowDataUrl` for `data:`.
+   */
+  additionalProtocols?: readonly string[];
+}
+
 const getUploadLang = (): UploadLang => {
   try {
     const stored = localStorage.getItem(SD_LANGUAGE_STORAGE_KEY);
     if (stored && stored in UPLOAD_MESSAGES) return stored as UploadLang;
-  } catch { /* ignore */ }
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
   return 'vi';
 };
 
-/**
- * Opens the native file picker and resolves with the selected file(s) after validation.
- *
- * @param option.extensions - Allowed file extensions, e.g. `['pdf', 'docx']`. Case-insensitive.
- * @param option.maxSizeInMb - Maximum file size in megabytes.
- * @param option.validator - Custom validator: receives the file name and returns an error message string if invalid.
- * @param option.multiple - Allow selecting multiple files (returns `File[]`).
- * @returns A Promise resolving to `File`, `File[]`, or `null` if no file was selected.
- * @throws `Error` with a localized message if extension or size validation fails.
- *
- * @example
- * // Single file, PDF only, max 5 MB
- * const file = await BrowserUtilities.upload({ extensions: ['pdf'], maxSizeInMb: 5 });
- *
- * // Multiple images
- * const files = await BrowserUtilities.upload({ extensions: ['jpg', 'png', 'webp'], multiple: true });
- */
-const upload = (option?: { extensions?: string[]; maxSizeInMb?: number; validator?: (fileName: string) => string; multiple?: boolean }) => {
-  const uploadId = 'U1e09c1c0-b647-437e-995e-d7a1a1b60550';
-  const promise = new Promise<File | File[] | null>((resolve, reject) => {
-    const body = document.getElementsByTagName('body')?.[0];
-    if (!body) {
-      resolve(null);
+let pickerSequence = 0;
+
+function upload(option: UploadOptions & { multiple: true }): Promise<File[]>;
+function upload(option?: UploadOptions & { multiple?: false | undefined }): Promise<File>;
+function upload(option?: UploadOptions): Promise<File | File[]>;
+function upload(option: UploadOptions = {}): Promise<File | File[]> {
+  return new Promise((resolve, reject) => {
+    const requestedMaxSize = option.maxSizeInMb;
+    const maxSizeInBytes = requestedMaxSize === undefined
+      ? undefined
+      : requestedMaxSize * 1024 * 1024;
+    if (
+      requestedMaxSize !== undefined
+      && (!Number.isFinite(requestedMaxSize) || requestedMaxSize <= 0 || !Number.isFinite(maxSizeInBytes))
+    ) {
+      reject(new ValidationError('maxSizeInMb must be a positive finite number'));
       return;
     }
-    const existedElement = document.getElementById(uploadId);
-    if (existedElement) {
-      existedElement.remove();
+    const requestedTimeout = option.timeoutMs ?? 300_000;
+    if (!Number.isFinite(requestedTimeout) || requestedTimeout <= 0) {
+      reject(new ValidationError('timeoutMs must be a positive finite number'));
+      return;
     }
-    const element = document.createElement('input');
-    element.setAttribute('id', uploadId);
-    element.setAttribute('type', 'file');
-    if (option?.multiple) {
-      element.setAttribute('multiple', '');
+    if (typeof document === 'undefined' || !document.body) {
+      reject(new ValidationError('The file picker requires document.body'));
+      return;
     }
-    element.style.display = 'none';
-    body.appendChild(element);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    element.addEventListener('change', (evt: any) => {
-      try {
-        const target = evt.target as DataTransfer;
 
-        const throwUploadError = (msgKey: UploadMsgKey, name: string): never => {
-          const lang = getUploadLang();
-          const template = UPLOAD_MESSAGES[lang][msgKey] ?? UPLOAD_MESSAGES.vi[msgKey];
-          throw new Error(template.replace('{name}', name));
-        };
+    const input = document.createElement('input');
+    input.id = `sdcore-file-picker-${Date.now().toString(36)}-${++pickerSequence}`;
+    input.type = 'file';
+    input.multiple = option.multiple === true;
+    input.style.display = 'none';
+    const accept = option.accept ?? option.extensions?.map(extension => `.${extension.replace(/^\./, '')}`).join(',');
+    if (accept) input.accept = accept;
 
-        if (option?.multiple) {
-          const files: File[] = [];
-          for (const file of Array.from(target.files)) {
-            if (file) {
-              const lastDot = file.name.lastIndexOf('.');
-              if (lastDot === -1) {
-                throwUploadError('invalid-format', file.name);
-              }
-              const extension = file.name.substring(lastDot + 1);
-              if (option) {
-                if (option.extensions?.length && !option.extensions.some(e => e.toLowerCase() === extension.toLowerCase())) {
-                  throwUploadError('invalid-format', file.name);
-                }
-                if (option.maxSizeInMb && option.maxSizeInMb > 0 && option.maxSizeInMb * 1024 * 1024 < file.size) {
-                  throwUploadError('invalid-size', file.name);
-                }
-                if (option.validator && option.validator(file.name)) {
-                  // Custom validator returns its own message — pass through as-is (caller defines format).
-                  const message = option.validator(file.name);
-                  throw new Error(message);
-                }
-              }
-              files.push(file);
-            }
-          }
-          resolve(files);
-        } else {
-          const file = target.files.item(0);
-          if (file) {
-            const lastDot = file.name.lastIndexOf('.');
-            if (lastDot === -1) {
-              throwUploadError('invalid-format', file.name);
-            }
-            const extension = file.name.substring(lastDot + 1);
-            if (option) {
-              if (option.extensions?.length && !option.extensions.some(e => e.toLowerCase() === extension.toLowerCase())) {
-                throwUploadError('invalid-format', file.name);
-              }
-              if (option.maxSizeInMb && option.maxSizeInMb > 0 && option.maxSizeInMb * 1024 * 1024 < file.size) {
-                throwUploadError('invalid-size', file.name);
-              }
-              if (option.validator && option.validator(file.name)) {
-                const message = option.validator(file.name);
-                throw new Error(message);
-              }
-            }
-            resolve(file);
-          }
-        }
-      } catch (error) {
-        reject(error);
+    let settled = false;
+    const timeout = setTimeout(() => fail(new FilePickerCancelledError()), requestedTimeout);
+
+    const cleanup = (): void => {
+      input.removeEventListener('change', onChange);
+      input.removeEventListener('cancel', onCancel);
+      clearTimeout(timeout);
+      input.remove();
+    };
+    const succeed = (value: File | File[]): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const uploadError = (key: UploadMsgKey, name: string): ValidationError => {
+      const lang = getUploadLang();
+      return new ValidationError(UPLOAD_MESSAGES[lang][key].replace('{name}', name));
+    };
+    const validate = (file: File): void => {
+      // Size is deliberately checked before format and custom validators.
+      if (maxSizeInBytes !== undefined && file.size > maxSizeInBytes) {
+        throw uploadError('invalid-size', file.name);
       }
-    });
-    element.click();
-  });
-  return promise;
-};
-
-const generateFileName = (fileName?: string | null) => {
-  if (!fileName) {
-    const id = `${new Date().getTime().toString(36)}${Math.random().toString(36).substring(2, 7)}`;
-    return `file_${id}`;
-  }
-  return fileName;
-};
-
-/**
- * Triggers a browser download for a `File` object or a URL string.
- * - URLs starting with `http` are opened in a new tab.
- * - All other strings (blob URLs, data URIs, relative paths) trigger a file download.
- *
- * @param fileOrPath - `File` object or URL/path string.
- * @param fileName - Override for the downloaded file name.
- *
- * @example
- * BrowserUtilities.download(file);                        // use file.name
- * BrowserUtilities.download(file, 'export.pdf');          // override name
- * BrowserUtilities.download('https://example.com/report'); // opens in new tab
- * BrowserUtilities.download('/api/export?format=csv', 'data.csv');
- */
-const download = (fileOrPath: File | string | undefined | null, fileName?: string | null) => {
-  if (!fileOrPath) {
-    console.warn('No file or path provided for download');
-    return;
-  }
-  fileName = generateFileName(fileName);
-  if (fileOrPath instanceof File) {
-    const url = URL.createObjectURL(fileOrPath);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileOrPath.name || fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    return;
-  }
-  const a = document.createElement('a');
-  a.href = fileOrPath;
-  if (fileOrPath.startsWith('http')) {
-    a.target = '_blank';
-  } else {
-    a.download = fileName;
-  }
-  a.style.visibility = 'hidden';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-};
-
-/**
- * Triggers a browser download for a `Blob` object.
- *
- * @param blob - The Blob to download.
- * @param fileName - File name for the download; auto-generated if omitted.
- *
- * @example
- * const blob = new Blob(['hello, world'], { type: 'text/plain' });
- * BrowserUtilities.downloadBlob(blob, 'greeting.txt');
- */
-const downloadBlob = (blob: Blob, fileName?: string) => {
-  try {
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      link.download = generateFileName(fileName);
-      link.href = url;
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      window.URL.revokeObjectURL(url);
-      link.remove();
+      if (option.extensions?.length) {
+        const dot = file.name.lastIndexOf('.');
+        const extension = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : '';
+        if (!extension || !option.extensions.some(item => item.replace(/^\./, '').toLowerCase() === extension)) {
+          throw uploadError('invalid-format', file.name);
+        }
+      }
+      const filenameMessage = option.validator?.(file.name);
+      if (filenameMessage) throw new ValidationError(filenameMessage);
+      const fileMessage = option.fileValidator?.(file);
+      if (fileMessage) throw new ValidationError(fileMessage);
+    };
+    const selectedFiles = (): File[] => Array.from(input.files ?? []);
+    function onChange(): void {
+      try {
+        const files = selectedFiles();
+        if (files.length === 0) {
+          fail(new FilePickerCancelledError());
+          return;
+        }
+        files.forEach(validate);
+        succeed(option.multiple ? files : files[0]);
+      } catch (error) {
+        fail(error);
+      }
     }
-  } catch (e) {
-    console.error('BlobToSaveAs error', e);
+    function onCancel(): void {
+      fail(new FilePickerCancelledError());
+    }
+    input.addEventListener('change', onChange);
+    input.addEventListener('cancel', onCancel);
+    document.body.appendChild(input);
+    try {
+      input.click();
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+
+const generateFileName = (fileName?: string | null): string => {
+  if (fileName) return fileName;
+  const id = `${Date.now().toString(36)}${Math.random().toString(36).substring(2, 7)}`;
+  return `file_${id}`;
+};
+
+const clickDownloadLink = (href: string, fileName?: string, openInNewTab = false): void => {
+  const link = document.createElement('a');
+  try {
+    link.href = href;
+    link.style.visibility = 'hidden';
+    if (openInNewTab) {
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    } else {
+      link.download = generateFileName(fileName);
+    }
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    link.remove();
   }
 };
 
-/**
- * Writes text to the clipboard using the Clipboard API.
- *
- * @param text - The string to copy.
- *
- * @example
- * BrowserUtilities.copyToClipboard('https://example.com/share-link');
- */
-const copyToClipboard = (text: string) => {
-  navigator.clipboard.writeText(text);
+const ACTIVE_DOWNLOAD_PROTOCOLS = new Set(['javascript:', 'vbscript:']);
+
+const normalizeAdditionalProtocol = (value: unknown): string => {
+  if (typeof value !== 'string' || value.length === 0 || value !== value.trim()) {
+    throw new ValidationError('additionalProtocols must contain valid protocol names');
+  }
+  const protocol = (value.endsWith(':') ? value : `${value}:`).toLowerCase();
+  if (!/^[a-z][a-z\d+.-]*:$/u.test(protocol)) {
+    throw new ValidationError('additionalProtocols must contain valid protocol names');
+  }
+  return protocol;
 };
 
-/**
- * Returns `true` if the current device is likely a mobile device
- * based on the user agent string.
- *
- * @example
- * if (BrowserUtilities.isMobile()) {
- *   // render compact layout
- * }
- */
-const isMobile = (): boolean => {
-  return /Mobi|Android/i.test(navigator.userAgent);
+const parseDownloadUrl = (value: string, options: DownloadOptions): { href: string; openInNewTab: boolean } => {
+  if (!value || value !== value.trim() || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new ValidationError('Malformed download URL');
+  }
+  let url: URL;
+  try {
+    url = new URL(value, window.location.href);
+  } catch (cause) {
+    throw new ValidationError('Malformed download URL', { cause });
+  }
+  const protocol = url.protocol.toLowerCase();
+  const additionalProtocols = (options.additionalProtocols ?? []).map(normalizeAdditionalProtocol);
+  if (ACTIVE_DOWNLOAD_PROTOCOLS.has(protocol)) throw new UnsafeUrlProtocolError(protocol);
+  const allowed = protocol === 'http:' || protocol === 'https:' || protocol === 'blob:' ||
+    (protocol === 'data:' && options.allowDataUrl === true) ||
+    (protocol !== 'data:' && additionalProtocols.includes(protocol));
+  if (!allowed) throw new UnsafeUrlProtocolError(protocol);
+
+  const hasExplicitScheme = /^[a-z][a-z\d+.-]*:/iu.test(value);
+  if (!hasExplicitScheme && url.origin !== window.location.origin) {
+    throw new UnsafeUrlProtocolError(protocol);
+  }
+  return {
+    href: url.href,
+    openInNewTab: hasExplicitScheme && (protocol === 'http:' || protocol === 'https:'),
+  };
 };
 
+const download = (
+  fileOrPath: File | string | undefined | null,
+  fileName?: string | null,
+  options: DownloadOptions = {}
+): void => {
+  if (!fileOrPath) return;
+  if (typeof File !== 'undefined' && fileOrPath instanceof File) {
+    const url = URL.createObjectURL(fileOrPath);
+    try {
+      clickDownloadLink(url, fileName ?? fileOrPath.name);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    return;
+  }
+  const parsed = parseDownloadUrl(fileOrPath as string, options);
+  clickDownloadLink(parsed.href, fileName ?? undefined, parsed.openInNewTab);
+};
 
-/**
- * Browser-specific utilities: file upload/download, clipboard, device detection,
- * and cross-browser private-mode detection.
- *
- * @example
- * import { BrowserUtilities } from '@sdcorejs/utils/fns';
- *
- * const file = await BrowserUtilities.upload({ extensions: ['pdf'] });
- * const { isPrivate } = await BrowserUtilities.detectIncognito();
- */
+const downloadBlob = (blob: Blob, fileName?: string): void => {
+  const url = URL.createObjectURL(blob);
+  try {
+    clickDownloadLink(url, fileName);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const copyToClipboard = async (text: string): Promise<void> => {
+  await navigator.clipboard.writeText(text);
+};
+
+const isMobile = (): boolean => /Mobi|Android/i.test(navigator.userAgent);
+
 export const BrowserUtilities = {
+  /** Opens an isolated file picker, validates each selected file once, and always settles. */
   upload,
+  /** Downloads a File, safe relative URL, or explicitly allowed absolute URL. */
   download,
+  /** Downloads Blob bytes and revokes the temporary object URL after the click. */
   downloadBlob,
+  /** Writes text to the Clipboard API and exposes permission failures through its Promise. */
   copyToClipboard,
+  /** Returns whether the current user-agent string resembles a mobile browser. */
   isMobile,
   /**
-   * Detects whether the browser is running in private/incognito mode.
-   * Works across Chrome, Edge, Firefox, Safari, and IE.
-   *
-   * @returns `Promise<{ isPrivate: boolean, browserName: string }>`
-   *
-   * @example
-   * const { isPrivate, browserName } = await BrowserUtilities.detectIncognito();
-   * if (isPrivate) console.log(`${browserName} is in private mode`);
+   * Retains the bounded v1.x best-effort result for compatibility.
+   * @deprecated Private-mode detection is unreliable and has no security-capable
+   * replacement. Remove decision logic that depends on it; analytics uses must
+   * tolerate browser-dependent false results.
    */
   detectIncognito,
 };

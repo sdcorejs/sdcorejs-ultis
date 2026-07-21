@@ -1,5 +1,9 @@
 # Showcase Site Implementation Plan
 
+> [!IMPORTANT]
+> This is a historical implementation snapshot, not current API documentation.
+> For v1.2.0 behavior, use [README](../../../README.md) and [migration guidance](../../../MIGRATION-1.2.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a Vite + vanilla TypeScript interactive showcase site for `@sdcorejs/utils` with four tabs (Constants, Models, Validation Playground, Functions Demo), auto-deployed to GitHub Pages via GitHub Actions.

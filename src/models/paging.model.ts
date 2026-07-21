@@ -30,7 +30,7 @@ export interface QueryReq<T = any> {
  * @example
  * const req: PagingReq<Product> = {
  *   pageSize: 20,
- *   pageNumber: 1,
+ *   pageNumber: 0,
  *   orders: [{ field: 'createdAt', direction: 'DESC' }],
  *   filters: [{ field: 'category', operator: 'EQUAL', data: 'electronics' }],
  * };
@@ -38,7 +38,7 @@ export interface QueryReq<T = any> {
 export interface PagingReq<T = any> extends QueryReq<T> {
   /** Number of items per page. Defaults to the server-side default when omitted. */
   pageSize?: number;
-  /** 1-based page index. Pass `1` for the first page. */
+  /** Optional zero-based page index. Pass `0` for the first page. */
   pageNumber?: number;
   /** Ordered list of sort criteria applied to the result set. */
   orders?: Order<T>[];

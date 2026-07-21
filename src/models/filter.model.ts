@@ -32,6 +32,9 @@ export type Filter<T = any> = FilterHasData<T> | FilterBetween<T> | FilterNoData
  */
 export type FilterDataType = 'absolute' | 'field' | 'date-today' | 'date-relative';
 
+/** Explicit unit used when a date field or operand is represented by a numeric timestamp. */
+export type FilterTimestampUnit = 'seconds' | 'milliseconds';
+
 /**
  * Mốc thời gian tương đối, được resolve thành `Date` tại thời điểm đánh giá.
  * A relative date spec, resolved to a concrete `Date` at evaluation time.
@@ -44,7 +47,7 @@ export type FilterDataType = 'absolute' | 'field' | 'date-today' | 'date-relativ
  * const d: DateRelative = { amount: 3, direction: 'previous', unit: 'day' };
  */
 export interface DateRelative {
-  /** Độ lớn offset (>= 1). Offset magnitude. */
+  /** Độ lớn offset là số nguyên an toàn (>= 1). Positive safe-integer offset magnitude. */
   amount: number;
   /** Lùi quá khứ (`previous`) hay tiến tương lai (`next`). Into the past or the future. */
   direction: 'previous' | 'next';
@@ -53,40 +56,61 @@ export interface DateRelative {
 }
 
 /** Giá trị literal thuần — hành vi `dataType: 'absolute'`. A plain literal value (the `'absolute'` case). */
-export type FilterLiteral = string | number | boolean | Date | null | undefined | Array<string | number | boolean>;
+export type FilterLiteral = string | number | boolean | Date | null | undefined | Array<string | number | boolean | Date | null | undefined>;
+
+type FilterMembershipOperator = Extract<OperatorHasData, 'IN' | 'NOT_IN'>;
+type FilterScalarOperator = Exclude<OperatorHasData, 'BETWEEN' | FilterMembershipOperator>;
+type FilterSingleValueOperator = Exclude<OperatorHasData, 'BETWEEN'>;
+type FilterScalarLiteral = Exclude<FilterLiteral, unknown[]>;
+type FilterMembershipLiteral = Extract<FilterLiteral, unknown[]>;
 
 /** Trường chung cho mọi filter đơn-trị. Shared fields for every single-value filter. */
-interface FilterHasDataBase<T = any> {
+interface FilterHasDataBase<T = any, TOperator extends FilterSingleValueOperator = FilterSingleValueOperator> {
   /** Dot-notation path of the field to filter on (e.g. `'address.city'`). */
   field: NestedKeyOf<T>;
   /** Comparison operator — all `OperatorHasData` values except `'BETWEEN'`. */
-  operator: Exclude<OperatorHasData, 'BETWEEN'>;
+  operator: TOperator;
+  /**
+   * Unit for numeric date values on this filter. Overrides evaluator-level timestamp options.
+   * When omitted, numeric values are not interpreted as dates unless an evaluator option supplies a unit.
+   */
+  timestampUnit?: FilterTimestampUnit;
 }
 
-/** `dataType: 'absolute'` (mặc định / default) — `data` là literal. `data` is a literal value. */
-export interface FilterHasDataAbsolute<T = any> extends FilterHasDataBase<T> {
-  /** Bỏ trống = `'absolute'`. Omitted means `'absolute'`. */
-  dataType?: 'absolute';
-  /** Giá trị literal để so sánh. The literal value to compare against. */
-  data: FilterLiteral;
-}
+/**
+ * `dataType: 'absolute'` (default). Membership operators require an array;
+ * every other single-value operator requires a scalar literal.
+ */
+export type FilterHasDataAbsolute<T = any> =
+  | (FilterHasDataBase<T, FilterMembershipOperator> & {
+    /** Omitted means `'absolute'`. */
+    dataType?: 'absolute';
+    /** Literal membership candidates. */
+    data: FilterMembershipLiteral;
+  })
+  | (FilterHasDataBase<T, FilterScalarOperator> & {
+    /** Omitted means `'absolute'`. */
+    dataType?: 'absolute';
+    /** Scalar literal to compare against. */
+    data: FilterScalarLiteral;
+  });
 
 /** `dataType: 'field'` — so sánh field với field khác (vd `price > cost`). Compare two fields. */
-export interface FilterHasDataField<T = any> extends FilterHasDataBase<T> {
+export interface FilterHasDataField<T = any> extends FilterHasDataBase<T, FilterSingleValueOperator> {
   dataType: 'field';
   /** Path của field dùng làm vế phải. Dot-notation path of the field used as the operand. */
   data: NestedKeyOf<T>;
 }
 
 /** `dataType: 'date-today'` — vế phải là đầu ngày hôm nay. The operand is the start of today. */
-export interface FilterHasDataToday<T = any> extends FilterHasDataBase<T> {
+export interface FilterHasDataToday<T = any> extends FilterHasDataBase<T, FilterScalarOperator> {
   dataType: 'date-today';
   /** Hằng cố định. Fixed sentinel. */
   data: 'TODAY';
 }
 
 /** `dataType: 'date-relative'` — vế phải là mốc tương đối. The operand is a {@link DateRelative}. */
-export interface FilterHasDataRelative<T = any> extends FilterHasDataBase<T> {
+export interface FilterHasDataRelative<T = any> extends FilterHasDataBase<T, FilterScalarOperator> {
   dataType: 'date-relative';
   /** Spec ngày tương đối. The relative-date spec. */
   data: DateRelative;
@@ -134,12 +158,17 @@ export interface FilterBetween<T = any> {
   /** Dot-notation path of the field to filter on. */
   field: NestedKeyOf<T>;
   operator: 'BETWEEN';
+  /**
+   * Unit for numeric date values on this filter. Overrides evaluator-level timestamp options.
+   * When omitted, numeric values are not inferred to be timestamp representations.
+   */
+  timestampUnit?: FilterTimestampUnit;
   /** Inclusive lower and upper bounds for the range check. */
   data: {
     /** Lower bound (inclusive). */
-    from: string | number;
+    from: string | number | Date;
     /** Upper bound (inclusive). */
-    to: string | number;
+    to: string | number | Date;
   };
 }
 
@@ -192,6 +221,11 @@ export interface FilterAndOr<T = any> {
  */
 export type FilterFieldType = 'string' | 'number' | 'boolean' | 'date';
 
+declare const validatedFilterBrand: unique symbol;
+
+/** A filter definition that passed runtime shape, operand, path, depth, and cycle validation. */
+export type ValidatedFilter<T = any> = Filter<T> & { readonly [validatedFilterBrand]: true };
+
 /**
  * Tuỳ chọn cho việc eval filter phía client. Options for client-side filter evaluation.
  *
@@ -208,4 +242,25 @@ export interface MatchOptions<T = any> {
    * returned as numeric timestamps, or field-to-field comparisons.
    */
   fieldTypes?: Partial<Record<NestedKeyOf<T> & string, FilterFieldType>>;
+  /**
+   * Default unit for numeric values interpreted as dates. With no unit, numeric dates do not coerce.
+   * Prefer `timestampUnits` or a filter-level `timestampUnit` when fields use different representations.
+   */
+  timestampUnit?: FilterTimestampUnit;
+  /** Per-field timestamp units. Own data properties are read; inherited values/getters are ignored. */
+  timestampUnits?: Partial<Record<NestedKeyOf<T> & string, FilterTimestampUnit>>;
+  /**
+   * Explicit compatibility switch for the unchanged v1.x `< 1e12 = seconds` heuristic.
+   * @deprecated Magnitude inference is ambiguous; provide `timestampUnit`/`timestampUnits`
+   * instead. Enabling it can reinterpret legitimate pre-2001 millisecond timestamps.
+   */
+  legacyTimestampInference?: boolean;
+  /** Maximum nested logical-filter depth. Defaults to `32`. */
+  maxDepth?: number;
+  /** Maximum property-path segments. Defaults to the shared safe-path limit. */
+  maxPathDepth?: number;
+  /** `nullish` makes missing paths satisfy `NULL`; `distinct` treats missing as a non-match. */
+  missingValuePolicy?: 'nullish' | 'distinct';
+  /** Deterministic reference time used by today/relative-date operands. */
+  now?: Date;
 }

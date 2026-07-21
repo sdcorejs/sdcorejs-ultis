@@ -6,74 +6,116 @@
   "homepage": "https://sdcorejs.github.io/sdcorejs-utils",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sdcorejs/sdcorejs-utils.git"
+    "url": "git+https://github.com/sdcorejs/sdcorejs-utils.git"
   },
   "bugs": {
     "url": "https://github.com/sdcorejs/sdcorejs-utils/issues"
   },
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./models": {
-      "types": "./dist/models.d.ts",
-      "import": "./dist/models.js",
-      "require": "./dist/models.cjs"
+      "import": {
+        "types": "./dist/models.d.ts",
+        "default": "./dist/models.js"
+      },
+      "require": {
+        "types": "./dist/models.d.cts",
+        "default": "./dist/models.cjs"
+      }
     },
     "./constants": {
-      "types": "./dist/constants.d.ts",
-      "import": "./dist/constants.js",
-      "require": "./dist/constants.cjs"
+      "import": {
+        "types": "./dist/constants.d.ts",
+        "default": "./dist/constants.js"
+      },
+      "require": {
+        "types": "./dist/constants.d.cts",
+        "default": "./dist/constants.cjs"
+      }
     },
     "./fns": {
-      "types": "./dist/fns.d.ts",
-      "import": "./dist/fns.js",
-      "require": "./dist/fns.cjs"
+      "import": {
+        "types": "./dist/fns.d.ts",
+        "default": "./dist/fns.js"
+      },
+      "require": {
+        "types": "./dist/fns.d.cts",
+        "default": "./dist/fns.cjs"
+      }
+    },
+    "./errors": {
+      "import": {
+        "types": "./dist/errors.d.ts",
+        "default": "./dist/errors.js"
+      },
+      "require": {
+        "types": "./dist/errors.d.cts",
+        "default": "./dist/errors.cjs"
+      }
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md",
+    "MIGRATION-1.2.md",
+    "SECURITY.md",
+    "RELEASE_NOTES-1.2.0.md"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run --coverage",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:date": "vitest run src/fns/date.fns.spec.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build",
+    "publint": "publint --strict",
+    "attw": "attw --pack . --profile node16",
+    "test:package": "node scripts/validate-package.mjs",
+    "test:package:runtime": "node scripts/validate-package.mjs --runtime",
+    "test:package:types": "node scripts/validate-package.mjs --types",
+    "test:package:browser": "node scripts/validate-package.mjs --browser",
+    "test:examples": "node scripts/validate-package.mjs --examples",
+    "validate:package": "npm run publint && npm run attw && npm run test:package",
+    "validate": "npm run typecheck && npm run test:coverage && npm run build && npm run validate:package",
+    "validate:site": "npm --prefix site run validate",
+    "validate:all": "npm run validate && npm run validate:site",
+    "prepublishOnly": "npm run validate",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "npm run build && changeset publish"
-  },
-  "peerDependencies": {
-    "rxjs": ">=7.0.0"
-  },
-  "peerDependenciesMeta": {
-    "rxjs": {
-      "optional": true
-    }
+    "release": "changeset publish"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@changesets/cli": "^2.31.0",
     "@types/jsdom": "^28.0.3",
     "@vitest/coverage-v8": "^4.1.9",
+    "esbuild": "0.28.1",
     "jsdom": "^29.1.1",
-    "rxjs": "^7.8.2",
+    "publint": "0.3.21",
     "tsup": "^8.0.0",
     "typescript": "~5.7.2",
     "vitest": "^4.1.9"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^20.0.0 || ^22.0.0 || ^24.0.0"
   },
   "overrides": {
     "esbuild": "0.28.1",
-    "js-yaml": "4.2.0"
+    "js-yaml": "4.3.0"
   }
 }

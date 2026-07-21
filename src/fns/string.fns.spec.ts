@@ -774,8 +774,12 @@ describe('StringUtilities REGEX_HEX_COLOR', () => {
 
 describe('StringUtilities REGEX_BASE64', () => {
   const re = () => new RegExp(StringUtilities.REGEX_BASE64);
-  it('chấp nhận chuỗi base64 hợp lệ SGVsbG8=', () => expect(re().test('SGVsbG8=')).toBe(true));
-  it('chấp nhận base64 không có padding', () => expect(re().test('SGVsbG8')).toBe(true));
-  it('từ chối ký tự ngoài base64 alphabet', () => expect(re().test('SGVs!G8=')).toBe(false));
-  it('từ chối chuỗi rỗng', () => expect(re().test('')).toBe(false));
+  it.each(['TQ==', 'TWE=', 'SGVsbG8=', 'SGVsbG8h'])(
+    'accepts padded or complete-quartet Base64 %s',
+    value => expect(re().test(value)).toBe(true),
+  );
+  it.each(['TQ', 'TWE', 'SGVsbG8', 'A===', 'TW=E', 'SGVs!G8=', ''])(
+    'rejects unpadded or malformed Base64 %j',
+    value => expect(re().test(value)).toBe(false),
+  );
 });

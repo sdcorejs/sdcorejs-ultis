@@ -1,5 +1,9 @@
 # @sdcorejs/utils Implementation Plan
 
+> [!IMPORTANT]
+> This is a historical implementation snapshot, not current API documentation.
+> For v1.2.0 behavior, use [README](../../../README.md) and [migration guidance](../../../MIGRATION-1.2.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Tạo pure TypeScript library `@sdcorejs/utils` với subpath exports `./models`, `./constants`, `./fns`, build bằng tsup, publish lên npm qua GitHub Actions khi merge vào `main`.

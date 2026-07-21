@@ -63,6 +63,15 @@ describe('ValidationUtilities.isUrl', () => {
   it('chấp nhận http://sub.domain.org/path', () => expect(ValidationUtilities.isUrl('http://sub.domain.org/path')).toBe(true));
   it('từ chối thiếu scheme', () => expect(ValidationUtilities.isUrl('example.com')).toBe(false));
   it('từ chối null', () => expect(ValidationUtilities.isUrl(null)).toBe(false));
+
+  it('accepts same-origin relative paths but rejects network-path and backslash origin changes', () => {
+    const options = { allowRelative: true, baseUrl: 'https://app.example/base/' } as const;
+
+    expect(ValidationUtilities.isUrl('../reports/1', options)).toBe(true);
+    expect(ValidationUtilities.isUrl('/reports/1', options)).toBe(true);
+    expect(ValidationUtilities.isUrl('//evil.example/reports/1', options)).toBe(false);
+    expect(ValidationUtilities.isUrl('\\\\evil.example\\reports\\1', options)).toBe(false);
+  });
 });
 
 describe('ValidationUtilities.isDomain', () => {
@@ -121,7 +130,7 @@ describe('ValidationUtilities.isPositiveNumber', () => {
 // ─────────────────────────────────────────────
 describe('ValidationUtilities.isUuid', () => {
   it('chấp nhận UUID lowercase', () => expect(ValidationUtilities.isUuid('550e8400-e29b-41d4-a716-446655440000')).toBe(true));
-  it('từ chối UUID chữ hoa', () => expect(ValidationUtilities.isUuid('550E8400-E29B-41D4-A716-446655440000')).toBe(false));
+  it('chấp nhận UUID chữ hoa', () => expect(ValidationUtilities.isUuid('550E8400-E29B-41D4-A716-446655440000')).toBe(true));
   it('từ chối thiếu dấu gạch ngang', () => expect(ValidationUtilities.isUuid('550e8400e29b41d4a716446655440000')).toBe(false));
 });
 
