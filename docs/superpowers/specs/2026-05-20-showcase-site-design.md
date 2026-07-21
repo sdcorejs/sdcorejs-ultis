@@ -1,5 +1,9 @@
 # Showcase Site Design
 
+> [!IMPORTANT]
+> This is a historical design snapshot, not current API documentation.
+> For v1.2.0 behavior, use [README](../../../README.md) and [migration guidance](../../../MIGRATION-1.2.md).
+
 **Goal:** A static interactive playground for `@sdcorejs/utils` — showcases constants, models, and live function demos; auto-deployed to GitHub Pages on every push to `main`.
 
 **Architecture:** Vite 5 + vanilla TypeScript, single-page app with four tab sections. Imports `@sdcorejs/utils` source directly (no npm publish required during development). Build outputs to `docs-site/dist/` and is deployed via GitHub Actions using `actions/deploy-pages`.

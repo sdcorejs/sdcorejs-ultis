@@ -1,5 +1,9 @@
 # @sdcorejs/utils — Design Spec
 
+> [!IMPORTANT]
+> This is a historical design snapshot, not current API documentation.
+> For v1.2.0 behavior, use [README](../../../README.md) and [migration guidance](../../../MIGRATION-1.2.md).
+
 **Date:** 2026-05-20
 **Status:** Approved
 

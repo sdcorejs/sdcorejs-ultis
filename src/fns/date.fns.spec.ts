@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DateParseError } from '../errors';
 import { DateUtilities } from './date.fns';
 
 // ─── isDate ──────────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ describe('DateUtilities.addDays', () => {
   });
 
   it('adds 0 days — same day', () => {
-    const original = new Date('2025-01-15');
+    const original = DateUtilities.parseLocalDateStrict('2025-01-15');
     const result = DateUtilities.addDays('2025-01-15', 0) as Date;
     expect(result.getDate()).toBe(original.getDate());
   });
@@ -428,5 +429,132 @@ describe('DateUtilities.timeDifference', () => {
   it('returns "X years ago" when elapsed >= 365 days', () => {
     const previous = '2023-06-20T12:00:00'; // 2 years before
     expect(DateUtilities.timeDifference(previous, current)).toBe('2 years ago');
+  });
+});
+
+describe('DateUtilities strict date contracts', () => {
+  it('parses plain dates as local calendar dates without a UTC shift', () => {
+    const date = DateUtilities.parseLocalDateStrict('2025-06-20');
+    expect([date.getFullYear(), date.getMonth() + 1, date.getDate(), date.getHours()]).toEqual([2025, 6, 20, 0]);
+  });
+
+  it('validates leap years and actual days of month', () => {
+    expect(DateUtilities.isValidLocalDate('2024-02-29')).toBe(true);
+    expect(DateUtilities.isValidLocalDate('2025-02-29')).toBe(false);
+    expect(DateUtilities.isValidLocalDate('2025-02-30')).toBe(false);
+    expect(() => DateUtilities.parseLocalDateStrict('02/31/2024', 'MM/dd/yyyy')).toThrow(DateParseError);
+  });
+
+  it('rejects booleans, arrays, and coercible objects', () => {
+    expect(DateUtilities.isDate(true)).toBe(false);
+    expect(DateUtilities.isDate([2025, 1, 1])).toBe(false);
+    expect(DateUtilities.isDate({ valueOf: () => 0 })).toBe(false);
+  });
+
+  it('distinguishes explicit instants from local date-times', () => {
+    expect(DateUtilities.isValidInstant('2025-01-15T10:30:00Z')).toBe(true);
+    expect(DateUtilities.isValidInstant('2025-01-15T17:30:00+07:00')).toBe(true);
+    expect(DateUtilities.isValidInstant('2025-01-15T10:30:00')).toBe(false);
+    expect(DateUtilities.isValidInstant('2025-01-15T10:30:00.1234Z')).toBe(false);
+    expect(DateUtilities.parseInstant('2025-01-15T10:30:00Z').getTime())
+      .toBe(DateUtilities.parseInstant('2025-01-15T17:30:00+07:00').getTime());
+  });
+
+  it('normalizes positive and negative offset instants deterministically', () => {
+    expect(DateUtilities.parseInstant('2025-01-15T17:30:00+07:00').toISOString())
+      .toBe('2025-01-15T10:30:00.000Z');
+    expect(DateUtilities.parseInstant('2025-01-15T05:30:00-05:00').toISOString())
+      .toBe('2025-01-15T10:30:00.000Z');
+  });
+
+  it('supports instants and calendar dates before 2001 and before 1970', () => {
+    expect(DateUtilities.parseInstant(Date.UTC(1999, 0, 1)).getUTCFullYear()).toBe(1999);
+    expect(DateUtilities.parseInstant(-1).toISOString()).toBe('1969-12-31T23:59:59.999Z');
+    expect(DateUtilities.parseLocalDateStrict('1960-01-02').getDate()).toBe(2);
+  });
+
+  it('rejects impossible legacy parseFrom values rather than normalizing', () => {
+    expect(DateUtilities.parseFrom('02/31/2025', 'MM/dd/yyyy')).toBeNull();
+    expect(DateUtilities.parseFrom('2025-01-01 25:00', 'yyyy-MM-dd HH:mm')).toBeNull();
+  });
+});
+
+describe('DateUtilities explicit arithmetic contracts', () => {
+  it('replaces every repeated formatting token', () => {
+    expect(DateUtilities.toFormat('2025-01-15T12:03:04', 'yyyy/yyyy MM-MM dd-dd HH:mm:ss'))
+      .toBe('2025/2025 01-01 15-15 12:03:04');
+  });
+
+  it('separates calendar-day and elapsed-day calculations', () => {
+    const springStart = new Date(2025, 2, 9, 0, 0, 0);
+    const springEnd = new Date(2025, 2, 10, 0, 0, 0);
+    expect(DateUtilities.calendarDayDifference(springStart, springEnd)).toBe(1);
+    expect(DateUtilities.elapsedDayDifference(springStart, springEnd)).toBeGreaterThan(0);
+  });
+
+  it('keeps calendar differences stable across spring-forward and fall-back boundaries', () => {
+    const springStart = DateUtilities.parseLocalDateStrict('2025-03-09');
+    const springEnd = DateUtilities.parseLocalDateStrict('2025-03-10');
+    const fallStart = DateUtilities.parseLocalDateStrict('2025-11-02');
+    const fallEnd = DateUtilities.parseLocalDateStrict('2025-11-03');
+
+    expect(DateUtilities.calendarDayDifference(springStart, springEnd)).toBe(1);
+    expect([23 / 24, 1]).toContain(DateUtilities.elapsedDayDifference(springStart, springEnd));
+    expect(DateUtilities.calendarDayDifference(fallStart, fallEnd)).toBe(1);
+    expect([1, 25 / 24]).toContain(DateUtilities.elapsedDayDifference(fallStart, fallEnd));
+  });
+
+  it('counts the December 31 to January 1 calendar boundary as one day', () => {
+    expect(DateUtilities.calendarDayDifference('2024-12-31', '2025-01-01')).toBe(1);
+  });
+
+  it('calculates completed and decimal years explicitly', () => {
+    expect(DateUtilities.completedYearDifference('2000-06-20', '2025-06-19')).toBe(24);
+    expect(DateUtilities.completedYearDifference('2000-06-20', '2025-06-20')).toBe(25);
+    expect(DateUtilities.completedYearDifference('2000-02-29', '2025-02-27')).toBe(24);
+    expect(DateUtilities.completedYearDifference('2000-02-29', '2025-02-28')).toBe(25);
+    expect(DateUtilities.decimalYearDifference('2000-01-01', '2025-07-01')).toBe(25.5);
+    expect(DateUtilities.completedAge('2000-06-20', '2025-06-19')).toBe(24);
+    expect(DateUtilities.completedAge('2000-02-29', '2025-02-28')).toBe(25);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5, 101])(
+    'rejects invalid decimal-year precision %s',
+    digits => {
+      expect(() => DateUtilities.decimalYearDifference('2000-01-01', '2025-07-01', digits))
+        .toThrow(DateParseError);
+    },
+  );
+
+  it('uses a constrained month overflow by default with explicit alternatives', () => {
+    const constrained = DateUtilities.addMonths('2025-01-31T12:00:00', 1);
+    const balanced = DateUtilities.addMonths('2025-01-31T12:00:00', 1, { overflow: 'balance' });
+    expect([constrained?.getMonth(), constrained?.getDate()]).toEqual([1, 28]);
+    expect([balanced?.getMonth(), balanced?.getDate()]).toEqual([2, 3]);
+    expect(DateUtilities.addMonths('2025-01-31', 1, { overflow: 'reject' })).toBeNull();
+  });
+
+  it('exposes the corrected millisecond spelling and compatibility alias', () => {
+    expect(DateUtilities.addMilliseconds('2025-01-01T00:00:00.000', 5)?.getMilliseconds()).toBe(5);
+    expect(DateUtilities.addMiliseconds('2025-01-01T00:00:00.000', 5)?.getMilliseconds()).toBe(5);
+  });
+
+  it('adds exact elapsed milliseconds across a fall-back DST boundary', () => {
+    const before = new Date('2025-11-02T05:59:59.999Z');
+    const result = DateUtilities.addMilliseconds(before, 1);
+
+    expect(result?.getTime()).toBe(before.getTime() + 1);
+  });
+
+  it('keeps the misspelled compatibility wrapper on its legacy local-clock behavior', () => {
+    const before = new Date('2025-11-02T05:59:59.999Z');
+    const expected = new Date(before);
+    expected.setMilliseconds(expected.getMilliseconds() + 1);
+
+    expect(DateUtilities.addMiliseconds(before, 1)?.getTime()).toBe(expected.getTime());
+  });
+
+  it('uses future wording instead of a negative value followed by ago', () => {
+    expect(DateUtilities.timeDifference('2025-01-02T00:00:00', '2025-01-01T00:00:00')).toBe('in 1 day');
   });
 });

@@ -1,0 +1,221 @@
+.playground {
+  margin: 2rem 0;
+}
+
+.playground-intro {
+  color: var(--ink-650);
+}
+
+.playground-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.playground-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper-raised);
+  padding: 1rem;
+}
+
+.playground-panel > h3 {
+  margin: 0 0 1rem;
+  color: var(--ink-650);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.playground-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.playground-dynamic-controls {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.playground-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--ink-650);
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.playground-field input,
+.playground-field select,
+.playground-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink-950);
+  font-size: 0.83rem;
+  font-weight: 450;
+  padding: 0.55rem 0.65rem;
+}
+
+.playground-field input:focus,
+.playground-field select:focus,
+.playground-field textarea:focus {
+  border-color: #087e91;
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.playground-option-row {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.playground-option-field {
+  flex: 1 1 8rem;
+}
+
+.check-field {
+  flex: 1 1 10rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-650);
+  font-size: 0.76rem;
+  cursor: pointer;
+  padding: 0.3rem 0;
+}
+
+.check-field input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.playground-field :disabled {
+  border-color: var(--line);
+  background: #eceeea;
+  color: var(--ink-500);
+  opacity: 1;
+}
+
+.playground-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.playground-result {
+  min-height: 5rem;
+  min-width: 0;
+  color: var(--ink-650);
+}
+
+.playground-result > p:first-child {
+  margin-top: 0;
+}
+
+.playground-result dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  margin: 1rem 0;
+  font-size: 0.76rem;
+}
+
+.playground-result dt {
+  color: var(--ink-500);
+  font-weight: 700;
+}
+
+.playground-result dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-800);
+  font-family: var(--font-mono);
+}
+
+.sample-data {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin: 1rem 0;
+  background: var(--surface-subtle);
+}
+
+.sample-data summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  color: var(--ink-650);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.55rem 0.75rem;
+}
+
+.sample-data .code-frame {
+  border-width: 1px 0 0;
+  border-radius: 0;
+  margin: 0;
+}
+
+.error-detail {
+  color: var(--danger);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.utility-demo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.utility-demo {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper-raised);
+  padding: 1rem;
+}
+
+.utility-demo h3 {
+  margin: 0 0 0.85rem;
+  color: var(--ink-950);
+  font-size: 0.92rem;
+}
+
+.utility-demo-controls {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.utility-demo-output {
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
+  border-left: 3px solid var(--cyan-500);
+  background: var(--surface-subtle);
+  color: #075b68;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  white-space: pre-wrap;
+}

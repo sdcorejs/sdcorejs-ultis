@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Utilities } from './utility.fns';
+import { UnsafePropertyPathError } from '../errors';
 
 // ─── fetchAllByPaging ─────────────────────────────────────────────────────────
 
@@ -197,11 +198,10 @@ describe('Utilities.generateUuid', () => {
     expect(id.length).toBeGreaterThan(0);
   });
 
-  it('matches UUID v4 format OR the fallback timestamp pattern', () => {
+  it('always matches UUID v4 and RFC variant format', () => {
     const id = Utilities.generateUuid();
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const fallbackPattern = /^\d+-[a-z0-9]+$/;
-    expect(uuidPattern.test(id) || fallbackPattern.test(id)).toBe(true);
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(uuidPattern.test(id)).toBe(true);
   });
 
   it('produces different values on successive calls', () => {
@@ -239,8 +239,8 @@ describe('Utilities.getNestedValue', () => {
     expect(Utilities.getNestedValue(undefined, 'a')).toBeUndefined();
   });
 
-  it('returns undefined for an empty path string', () => {
-    expect(Utilities.getNestedValue({ a: 1 }, '')).toBeUndefined();
+  it('rejects an empty path string', () => {
+    expect(() => Utilities.getNestedValue({ a: 1 }, '')).toThrow(UnsafePropertyPathError);
   });
 
   it('reads a value of 0 (falsy but valid)', () => {

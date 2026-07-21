@@ -7,11 +7,13 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM"],
+    "types": ["vite/client"],
     "paths": {
       "@sdcorejs/utils":            ["../src/index.ts"],
       "@sdcorejs/utils/models":     ["../src/models/index.ts"],
       "@sdcorejs/utils/constants":  ["../src/constants/index.ts"],
-      "@sdcorejs/utils/fns":        ["../src/fns/index.ts"]
+      "@sdcorejs/utils/fns":        ["../src/fns/index.ts"],
+      "@sdcorejs/utils/errors":     ["../src/errors.ts"]
     }
   },
   "include": ["src"]

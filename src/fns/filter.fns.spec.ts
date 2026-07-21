@@ -77,21 +77,21 @@ describe('FilterUtilities.toEpoch', () => {
   });
 
   it('millisecond number is kept as-is', () => {
-    expect(FilterUtilities.toEpoch(MS_2020)).toBe(MS_2020);
+    expect(FilterUtilities.toEpoch(MS_2020, { timestampUnit: 'milliseconds' })).toBe(MS_2020);
   });
 
   it('second number is scaled to milliseconds', () => {
-    expect(FilterUtilities.toEpoch(SEC_2020)).toBe(MS_2020);
+    expect(FilterUtilities.toEpoch(SEC_2020, { timestampUnit: 'seconds' })).toBe(MS_2020);
   });
 
   it('numeric string is treated as a timestamp', () => {
-    expect(FilterUtilities.toEpoch(String(MS_2020))).toBe(MS_2020);
-    expect(FilterUtilities.toEpoch(String(SEC_2020))).toBe(MS_2020);
+    expect(FilterUtilities.toEpoch(String(MS_2020), { timestampUnit: 'milliseconds' })).toBe(MS_2020);
+    expect(FilterUtilities.toEpoch(String(SEC_2020), { timestampUnit: 'seconds' })).toBe(MS_2020);
   });
 
   it('ISO date string → epoch', () => {
-    expect(FilterUtilities.toEpoch(ISO_2020)).toBe(MS_2020);
-    expect(FilterUtilities.toEpoch('2025-01-15')).toBe(new Date('2025-01-15').getTime());
+    expect(FilterUtilities.toEpoch(ISO_2020)).toBe(DateUtilities.parseLocalDateStrict(ISO_2020).getTime());
+    expect(FilterUtilities.toEpoch('2025-01-15')).toBe(DateUtilities.parseLocalDateStrict('2025-01-15').getTime());
   });
 
   it('unparseable string → null', () => {
@@ -99,7 +99,12 @@ describe('FilterUtilities.toEpoch', () => {
   });
 
   it('all four representations of the same instant collapse to one value', () => {
-    const all = [new Date(ISO_2020), ISO_2020, MS_2020, SEC_2020].map(FilterUtilities.toEpoch);
+    const all = [
+      FilterUtilities.toEpoch(new Date(MS_2020)),
+      FilterUtilities.toEpoch('2020-01-01T00:00:00.000Z'),
+      FilterUtilities.toEpoch(MS_2020, { timestampUnit: 'milliseconds' }),
+      FilterUtilities.toEpoch(SEC_2020, { timestampUnit: 'seconds' }),
+    ];
     expect(new Set(all).size).toBe(1);
     expect(all[0]).toBe(MS_2020);
   });
@@ -131,13 +136,16 @@ describe('FilterUtilities.isDateRelative (guard)', () => {
     expect(FilterUtilities.isDateRelative({ amount: 1, direction: 'sideways', unit: 'day' })).toBe(false);
     expect(FilterUtilities.isDateRelative({ amount: '1', direction: 'next', unit: 'day' })).toBe(false);
     expect(FilterUtilities.isDateRelative({ amount: 1, direction: 'next', unit: 'year' })).toBe(false);
+    expect(FilterUtilities.isDateRelative({ amount: 1.5, direction: 'next', unit: 'day' })).toBe(false);
+    expect(FilterUtilities.isDateRelative({ amount: Number.MAX_SAFE_INTEGER + 1, direction: 'next', unit: 'day' })).toBe(false);
   });
 });
 
 describe('FilterUtilities.resolveRelativeDate', () => {
   it('day/week/month anchor at midnight today', () => {
+    const now = new Date(2024, 5, 15, 13, 14, 15, 123);
     for (const unit of ['day', 'week', 'month'] as const) {
-      const d = FilterUtilities.resolveRelativeDate({ amount: 1, direction: 'previous', unit });
+      const d = FilterUtilities.resolveRelativeDate({ amount: 1, direction: 'previous', unit }, now);
       expect(d.getHours()).toBe(0);
       expect(d.getMinutes()).toBe(0);
       expect(d.getSeconds()).toBe(0);
@@ -145,22 +153,27 @@ describe('FilterUtilities.resolveRelativeDate', () => {
   });
 
   it('hour anchors at "now" (carries a time-of-day)', () => {
-    const back = FilterUtilities.resolveRelativeDate({ amount: 5, direction: 'previous', unit: 'hour' });
-    const fwd = FilterUtilities.resolveRelativeDate({ amount: 5, direction: 'next', unit: 'hour' });
+    const now = new Date(2024, 5, 15, 13, 14, 15, 123);
+    const back = FilterUtilities.resolveRelativeDate({ amount: 5, direction: 'previous', unit: 'hour' }, now);
+    const fwd = FilterUtilities.resolveRelativeDate({ amount: 5, direction: 'next', unit: 'hour' }, now);
     expect(fwd.getTime() - back.getTime()).toBe(10 * 60 * 60 * 1000);
+    expect([back.getMinutes(), back.getSeconds(), back.getMilliseconds()]).toEqual([14, 15, 123]);
+    expect([fwd.getMinutes(), fwd.getSeconds(), fwd.getMilliseconds()]).toEqual([14, 15, 123]);
   });
 
   it('previous is earlier than next for every unit', () => {
+    const now = new Date(2024, 5, 15, 13, 14, 15, 123);
     for (const unit of ['hour', 'day', 'week', 'month'] as const) {
-      const prev = FilterUtilities.resolveRelativeDate({ amount: 2, direction: 'previous', unit });
-      const next = FilterUtilities.resolveRelativeDate({ amount: 2, direction: 'next', unit });
+      const prev = FilterUtilities.resolveRelativeDate({ amount: 2, direction: 'previous', unit }, now);
+      const next = FilterUtilities.resolveRelativeDate({ amount: 2, direction: 'next', unit }, now);
       expect(next.getTime()).toBeGreaterThan(prev.getTime());
     }
   });
 
   it('week offset is ~7×amount days from today', () => {
-    const today = FilterUtilities.resolveRelativeDate({ amount: 0, direction: 'previous', unit: 'day' });
-    const oneWeekAgo = FilterUtilities.resolveRelativeDate({ amount: 1, direction: 'previous', unit: 'week' });
+    const now = new Date(2024, 5, 15, 13, 14, 15, 123);
+    const today = DateUtilities.begin(now)!;
+    const oneWeekAgo = FilterUtilities.resolveRelativeDate({ amount: 1, direction: 'previous', unit: 'week' }, now);
     expect(Math.round((today.getTime() - oneWeekAgo.getTime()) / DAY)).toBe(7);
   });
 });
@@ -309,6 +322,7 @@ describe('dataType field — compare two fields', () => {
     expect(
       match([{ field: 'updatedAtMs', operator: 'LESS_THAN', dataType: 'field', data: 'createdAt' }], {
         fieldTypes: { updatedAtMs: 'date', createdAt: 'date' },
+        timestampUnits: { updatedAtMs: 'milliseconds' },
       })
     ).toBe(true);
   });
@@ -344,15 +358,24 @@ describe('dataType date-today / date-relative', () => {
 describe('type-aware coercion', () => {
   it('ms-timestamp date field auto-coerces when the operand is a date', () => {
     // No schema: dataType date-* makes the field a date → ms kept, compares correctly.
-    expect(match([{ field: 'updatedAtMs', operator: 'LESS_OR_EQUAL', dataType: 'date-today', data: 'TODAY' }])).toBe(true);
+    expect(match(
+      [{ field: 'updatedAtMs', operator: 'LESS_OR_EQUAL', dataType: 'date-today', data: 'TODAY' }],
+      { timestampUnits: { updatedAtMs: 'milliseconds' } },
+    )).toBe(true);
     expect(
-      match([{ field: 'updatedAtMs', operator: 'GREATER_OR_EQUAL', dataType: 'date-relative', data: { amount: 1200, direction: 'previous', unit: 'month' } }])
+      match(
+        [{ field: 'updatedAtMs', operator: 'GREATER_OR_EQUAL', dataType: 'date-relative', data: { amount: 1200, direction: 'previous', unit: 'month' } }],
+        { timestampUnits: { updatedAtMs: 'milliseconds' } },
+      )
     ).toBe(true);
   });
 
   it('ms timestamp vs ISO literal — Date-like literal still needs the hint', () => {
     expect(
-      match([{ field: 'updatedAtMs', operator: 'LESS_THAN', data: '2021-01-01' }], { fieldTypes: { updatedAtMs: 'date' } })
+      match([{ field: 'updatedAtMs', operator: 'LESS_THAN', data: '2021-01-01' }], {
+        fieldTypes: { updatedAtMs: 'date' },
+        timestampUnits: { updatedAtMs: 'milliseconds' },
+      })
     ).toBe(true);
   });
 
@@ -360,6 +383,7 @@ describe('type-aware coercion', () => {
     expect(
       match([{ field: 'seenAtSec', operator: 'LESS_OR_EQUAL', dataType: 'date-today', data: 'TODAY' }], {
         fieldTypes: { seenAtSec: 'date' },
+        timestampUnits: { seenAtSec: 'seconds' },
       })
     ).toBe(true);
   });
@@ -436,7 +460,10 @@ describe('AND / OR composition', () => {
       match([{ operator: 'AND', data: [
         { field: 'active', operator: 'EQUAL', data: true },
         { field: 'seenAtSec', operator: 'LESS_OR_EQUAL', dataType: 'date-today', data: 'TODAY' },
-      ] }], { fieldTypes: { seenAtSec: 'date' } })
+      ] }], {
+        fieldTypes: { seenAtSec: 'date' },
+        timestampUnits: { seenAtSec: 'seconds' },
+      })
     ).toBe(true);
   });
 });
